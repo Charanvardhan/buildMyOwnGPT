@@ -60,6 +60,25 @@ def estimate_loss():
     return out
 
 
+class LayerNorm1D:
+    """ example code """
+    def __init__(self, dim, eps=1e-5, momentum=0.1):
+        self.eps = eps
+        self.gamma = torch.ones(dim)
+        self.beta = torch.zeros(dim)
+        
+    def __call__(self, x):
+        # calculate the forward pass 
+        xmean = x.mean(1, keepdim=True)
+        xvar = x.var(1, keepdim=True)
+        xhat = (x - xmean) / torch.sqrt(xvar + self.eps)
+        self.out = self.gamma * xhat + self.beta
+        return self.out
+    
+    def parameters(self):
+        return [self.gamma, self.beta]
+
+
 class Head(nn.Module):
     """ Creating one Head in self attention """
 
@@ -122,10 +141,12 @@ class Block(nn.Module):
         headSize = nEmbd // nHead
         self.sa = MultiHeadAttention(nHead, headSize)
         self.ffwd = FeedFoward(nEmbd)
+        self.ln1 = nn.LayerNorm(nEmbd)
+        self.ln2 = nn.LayerNorm(nEmbd)
 
     def forward(self, x):
-        x = x + self.sa(x)
-        x = x + self.ffwd(x)
+        x = x + self.sa(self.ln1(x))
+        x = x + self.ffwd(self.ln2(x))
         return x
 
 
@@ -145,6 +166,7 @@ class BigramLanguageModel(nn.Module):
             Block(nEmbd, nHead=4),
             Block(nEmbd, nHead=4),
             Block(nEmbd, nHead=4),
+            nn.LayerNorm(nEmbd),
         )
         # from token to logits we need a linear.
         self.lmHead = nn.Linear(nEmbd, vocabSize)
