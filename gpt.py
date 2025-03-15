@@ -90,9 +90,12 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, numHeads, headSize):
         super().__init__()
         self.heads = nn.ModuleList([Head(headSize) for _ in range(numHeads)])
+        self.proj = nn.Linear(nEmbd, nEmbd)
 
     def forward(self, x):
-        return torch.cat([h(x) for h in self.heads], dim=-1) # at this point this is similar to group convolution
+        out = torch.cat([h(x) for h in self.heads], dim=-1) # at this point this is similar to group convolution
+        out = self.proj(out)
+        return out
 
 
 class FeedFoward(nn.Module):
@@ -100,7 +103,11 @@ class FeedFoward(nn.Module):
 
     def __init__(self, nEmbd):
         super().__init__()
-        self.net = nn.Sequential(nn.Linear(nEmbd, nEmbd), nn.ReLU(),) 
+        self.net = nn.Sequential(
+            nn.Linear(nEmbd, 4 * nEmbd), 
+            nn.ReLU(), 
+            nn.Linear(4 * nEmbd, nEmbd),
+            ) 
 
     def forward(self, x):
         return self.net(x)
@@ -117,8 +124,8 @@ class Block(nn.Module):
         self.ffwd = FeedFoward(nEmbd)
 
     def forward(self, x):
-        x = self.sa(x)
-        x = self.ffwd(x)
+        x = x + self.sa(x)
+        x = x + self.ffwd(x)
         return x
 
 
@@ -151,7 +158,7 @@ class BigramLanguageModel(nn.Module):
         x = tokenEmbd + positionEmbd #(B, T, C)
         # x = self.saHead(x) # (B, T, C)
         # x = self.ffwd(x) #(B, T, C)
-        x = self.blocks(x)
+        x = self.blocks(x) #(B, T, C)
         logits = self.lmHead(x) # (B,T,vocabSize)
 
         if targets is None:
@@ -180,6 +187,7 @@ class BigramLanguageModel(nn.Module):
             # append sampled index to the running sequence
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx
+
 
 model = BigramLanguageModel()
 m = model.to(device)
