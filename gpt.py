@@ -11,7 +11,9 @@ learningRate = 1e-3
 device = 'mps' if torch.backends.mps.is_available() else 'cpu'
 evalIters = 200
 nEmbd = 32
-print(device)
+nHead = 4
+nLayers = 4
+dropout = 0.2
 # ------------
 
 torch.manual_seed(1337)
@@ -88,6 +90,7 @@ class Head(nn.Module):
         self.query = nn.Linear(nEmbd, headSize, bias=False)
         self.value = nn.Linear(nEmbd, headSize, bias=False)
         self.register_buffer('tril', torch.tril(torch.ones(blockSize, blockSize)))
+        self.droupout = nn.Dropout(dropout)
 
     def forward(self, x):
         B, T, C = x.shape
@@ -97,6 +100,7 @@ class Head(nn.Module):
         wei = q @ k.transpose(-2, -1) * C**-0.5 # (B, T, C) @ (B, C, T) --> (B, T, T)
         wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # B,T,T
         wei = F.softmax(wei, dim=-1) # (B, T, T)
+        wei = self.droupout(wei)
         # perform the weighted aggregation of the values 
         v = self.value(x) # (B, T, C)
         out = wei @ v # (B, T, T) @ (B, T, C) --> (B, T, C)
@@ -110,10 +114,11 @@ class MultiHeadAttention(nn.Module):
         super().__init__()
         self.heads = nn.ModuleList([Head(headSize) for _ in range(numHeads)])
         self.proj = nn.Linear(nEmbd, nEmbd)
+        self.droupout = nn.Dropout(dropout)
 
     def forward(self, x):
         out = torch.cat([h(x) for h in self.heads], dim=-1) # at this point this is similar to group convolution
-        out = self.proj(out)
+        out = self.droupout(self.proj(out))
         return out
 
 
@@ -126,6 +131,7 @@ class FeedFoward(nn.Module):
             nn.Linear(nEmbd, 4 * nEmbd), 
             nn.ReLU(), 
             nn.Linear(4 * nEmbd, nEmbd),
+            nn.Dropout(dropout),
             ) 
 
     def forward(self, x):
@@ -158,16 +164,9 @@ class BigramLanguageModel(nn.Module):
         # each token directly reads off the logits for the next token from a lookup table
         # create token embeddings
         self.token_embedding_table = nn.Embedding(vocabSize, nEmbd) # dont directly recreate logits we do intermediate phase 
-        self.positionEmbeddingTable = nn.Embedding(blockSize, nEmbd)
-        # self.saHead = Head(nEmbd)
-        # self.saHead = MultiHeadAttention(4, nEmbd // 4) # nEmb=32 so 4 heads of 8D self-attenti0n
-        # self.ffwd = FeedFoward(nEmbd)
-        self.blocks = nn.Sequential(
-            Block(nEmbd, nHead=4),
-            Block(nEmbd, nHead=4),
-            Block(nEmbd, nHead=4),
-            nn.LayerNorm(nEmbd),
-        )
+        self.positionEmbeddingTable = nn.Embedding(blockSize, nEmbd) # positional embeddings
+        self.blocks = nn.Sequential(*[Block(nEmbd, nHead=nHead) for _ in range(nLayers)])
+        self.lnf = nn.LayerNorm(nEmbd) # final layer norm
         # from token to logits we need a linear.
         self.lmHead = nn.Linear(nEmbd, vocabSize)
 
