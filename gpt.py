@@ -129,6 +129,7 @@ class BigramLanguageModel(nn.Module):
         positionEmbd = self.positionEmbeddingTable(torch.arange(T, device=device)) # (T,C)
         x = tokenEmbd + positionEmbd #(B, T, C)
         x = self.saHead(x) # (B, T, C)
+        x = self.ffwd(x) #(B, T, C)
         logits = self.lmHead(x) # (B,T,vocabSize)
 
         if targets is None:
