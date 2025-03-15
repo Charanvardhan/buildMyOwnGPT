@@ -8,7 +8,7 @@ blockSize = 8 # what is the maximum context length for predictions?
 max_iters = 5000
 evalInterval = 500
 learningRate = 1e-3
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'mps' if torch.cuda.is_available() else 'cpu'
 evalIters = 200
 nEmbd = 32
 print(device)
@@ -84,6 +84,17 @@ class Head(nn.Module):
         return out
 
 
+class MultiHeadAttention(nn.Module):
+    """ multiple heads of self attention in parallel """
+
+    def __init__(self, numHeads, headSize):
+        super().__init__()
+        self.heads = nn.ModuleList([Head(headSize) for _ in range(numHeads)])
+
+    def forward(self, x):
+        return torch.cat([h(x) for h in self.heads], dim=-1) # at this point this is similar to group convolution
+
+
 # super simple bigram model
 class BigramLanguageModel(nn.Module):
 
@@ -93,7 +104,8 @@ class BigramLanguageModel(nn.Module):
         # create token embeddings
         self.token_embedding_table = nn.Embedding(vocabSize, nEmbd) # dont directly recreate logits we do intermediate phase 
         self.positionEmbeddingTable = nn.Embedding(blockSize, nEmbd)
-        self.saHead = Head(nEmbd)
+        # self.saHead = Head(nEmbd)
+        self.saHead = MultiHeadAttention(4, nEmbd // 4) # nEmb=32 so 4 heads of 8D self-attenti0n
         # from token to logits we need a linear.
         self.lmHead = nn.Linear(nEmbd, vocabSize)
 
